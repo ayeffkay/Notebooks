@@ -1,0 +1,108 @@
+---
+title: "Training and evaluation"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+```{r}
+glioma <- readRDS("glioma.R")
+summary(glioma)
+prop.table(table(glioma$my_diagnosis))
+```
+
+#### Stratified sampling
+```{r}
+library(caret)
+set.seed(1)
+train.index <- createDataPartition(glioma$my_diagnosis, p=.7, list=F)
+train <- glioma[train.index, ]
+test <- glioma[-train.index, ]
+dim(train)
+dim(test)
+```
+
+#### Formula for SVM
+```{r}
+str <- "my_diagnosis ~ Gender + site + ki67 + Age"
+f <- as.formula(str)
+```
+
+```{r}
+library(e1071)
+svmfit <- svm(formula=f, 
+              data=train, 
+              kernel="radial", gamma=1, cost=1, 
+              scale = F, probability = T)
+```
+
+```{r}
+summary(svmfit)
+```
+
+```{r}
+saveRDS(svmfit, file = "SVM_RBF.R")
+```
+
+```{r}
+svmfit <- readRDS(file="SVM_RBF.R")
+```
+
+#### Prediction
+```{r}
+# predicted class
+pred_class <- predict(svmfit, test)
+```
+
+##### ROC-AUC
+```{r}
+# predicted probability
+pred_prob <- predict(svmfit, type = "prob", newdata = test, probability = TRUE)
+pred_prob <- attr(pred_prob, "probabilities")
+```
+
+```{r}
+library(fastDummies)
+binary <- data.frame(dummy_cols(test, select_columns = "my_diagnosis")[,39:88])
+binary <- binary[,order(colnames(binary))]
+
+class_prob <- data.frame(pred_prob)
+class_prob <- class_prob[,order(colnames(class_prob))]
+
+for (idx in 1:ncol(binary)) {
+  names(binary)[idx] <- sprintf("D%d_true", idx)
+  names(class_prob)[idx] <- sprintf("D%d_pred_SVM", idx)
+}
+
+final_df <- cbind(binary, class_prob)
+head(final_df)
+```
+
+
+```{r}
+library(multiROC)
+roc_res <- multi_roc(final_df, force_diag = T)
+plot_roc_df <- plot_roc_data(roc_res)
+```
+
+```{r}
+roc_res$AUC
+```
+
+```{r}
+require(ggplot2)
+ggplot(plot_roc_df, aes(x = 1-Specificity, y=Sensitivity)) +
+  geom_path(aes(color = Group, linetype=Method), size=1.5) +
+  geom_segment(aes(x = 0, y = 0, xend = 1, yend = 1), 
+                        colour='grey', linetype = 'dotdash') +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5), 
+                 legend.justification=c(1, 0), legend.position=c(.95, .05),
+                 legend.title=element_blank(), 
+                 legend.background = element_rect(fill=NULL, size=0.5, 
+                                                  linetype="solid", colour="black"))
+```
+
+
