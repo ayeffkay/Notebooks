@@ -1,0 +1,71 @@
+---
+title: "Feature selection and outlier detection"
+output: html_notebook
+---
+
+```{r}
+glioma <- readRDS("glioma.R")
+```
+
+```{r}
+palette = colorRampPalette(c("green", "white", "red")) (20)
+heatmap(x = mydata.corr, col = palette, symm = TRUE)
+```
+
+
+```{r}
+library(Hmisc)
+rcorr(as.matrix(glioma))
+```
+
+```{r}
+library(FSelector)
+weights <- information.gain(my_diagnosis~., glioma)
+```
+
+```{r}
+feature_names <- colnames(subset(glioma, select=-my_diagnosis))
+importance <- weights$attr_importance
+igain <- data.frame(names = feature_names, attribute_importance = importance)
+igain[order(igain$attribute_importance, decreasing = T),]
+```
+
+#### Outliers for idh1.R132H
+Bivariate outlier detection
+```{r}
+library(ggplot2)
+glioma2 <- glioma
+# factors as numbers (for plotting)
+new_levels <- 1:nlevels(glioma$my_diagnosis)
+levels(glioma2$my_diagnosis) <- as.factor(new_levels)
+ggplot(glioma2, aes(x = my_diagnosis, y=idh1.R132H)) +
+  geom_boxplot(outlier.colour="red", 
+             outlier.shape=16,
+             outlier.size=2, notch=FALSE)
+df <- data.frame(diagnosis = levels(glioma$my_diagnosis), number = new_levels)
+df
+```
+
+Multivariate outlier detection with Cook's distance
+```{r}
+# diagnoses is treated as numbers (for regression)
+glioma2$my_diagnosis <- as.numeric(glioma$my_diagnosis)
+mod <- lm(my_diagnosis~., data=glioma2) # linear regression
+cooksd <- cooks.distance(mod) # measuring Cook's distance
+# defining outliers based on 4/n criteria
+outliers <- ifelse(cooksd < 4/nrow(glioma2), "keep","delete")
+which(outliers=="delete")
+```
+
+```{r}
+# plotting objects (all objects upper cutoff are outliers)
+plot(cooksd, pch="*", cex=2, main="Objects by Cook's distance")
+abline(h = 4 / nrow(glioma2), col="red")  # add cutoff line
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd > 4 / nrow(glioma2), names(cooksd),""), col="red")  # add labels 
+```
+
+Most extreme observations
+```{r}
+library(car)
+outlierTest(mod)
+```
